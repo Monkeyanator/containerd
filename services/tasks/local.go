@@ -26,6 +26,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"contrib.go.opencensus.io/exporter/stackdriver"
 	api "github.com/containerd/containerd/api/services/tasks/v1"
 	"github.com/containerd/containerd/api/types"
 	"github.com/containerd/containerd/api/types/task"
@@ -48,6 +49,7 @@ import (
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/pkg/errors"
 	bolt "go.etcd.io/bbolt"
+	"go.opencensus.io/trace"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -196,6 +198,27 @@ func (l *local) Create(ctx context.Context, r *api.CreateTaskRequest, _ ...grpc.
 }
 
 func (l *local) Start(ctx context.Context, r *api.StartRequest, _ ...grpc.CallOption) (*api.StartResponse, error) {
+
+	fmt.Println("I think I can I think I can")
+
+	// Create an register a OpenCensus
+	// Stackdriver Trace exporter.
+	exporter, err := stackdriver.NewExporter(stackdriver.Options{
+		ProjectID: "samnaser-gke-dev-217421",
+	})
+	fmt.Println("Creds:", os.Getenv("GOOGLE_APPLICATION_CREDENTIALS"))
+	if err != nil {
+		fmt.Println("Stackdriver exporter could not be initialized: " + err.Error())
+	}
+
+	trace.RegisterExporter(exporter)
+	trace.ApplyConfig(trace.Config{DefaultSampler: trace.AlwaysSample()})
+
+	ctx, span := trace.StartSpan(ctx, "StartContainerInnerCall")
+	span.AddAttributes(trace.StringAttribute("Container ID", r.ContainerID))
+	defer span.End()
+	ctx, taskListProcessRetrieval := trace.StartSpan(ctx, "TaskListProcessRetrieval")
+
 	t, err := l.getTask(ctx, r.ContainerID)
 	if err != nil {
 		return nil, err
@@ -206,6 +229,10 @@ func (l *local) Start(ctx context.Context, r *api.StartRequest, _ ...grpc.CallOp
 			return nil, errdefs.ToGRPC(err)
 		}
 	}
+
+	taskListProcessRetrieval.End()
+	_, processStart := trace.StartSpan(ctx, "ProcessStart")
+
 	if err := p.Start(ctx); err != nil {
 		return nil, errdefs.ToGRPC(err)
 	}
@@ -213,6 +240,9 @@ func (l *local) Start(ctx context.Context, r *api.StartRequest, _ ...grpc.CallOp
 	if err != nil {
 		return nil, errdefs.ToGRPC(err)
 	}
+
+	processStart.End()
+
 	return &api.StartResponse{
 		Pid: state.Pid,
 	}, nil
