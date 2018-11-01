@@ -211,9 +211,8 @@ func (l *local) Start(ctx context.Context, r *api.StartRequest, _ ...grpc.CallOp
 	trace.RegisterExporter(exporter)
 	trace.ApplyConfig(trace.Config{DefaultSampler: trace.AlwaysSample()})
 
-	ctx, span := trace.StartSpan(ctx, "StartContainerInnerCall")
+	ctx, span := trace.StartSpan(ctx, "Containerd: retrieve task and process")
 	span.AddAttributes(trace.StringAttribute("Container ID", r.ContainerID))
-	defer span.End()
 
 	t, err := l.getTask(ctx, r.ContainerID)
 	if err != nil {
@@ -226,7 +225,9 @@ func (l *local) Start(ctx context.Context, r *api.StartRequest, _ ...grpc.CallOp
 		}
 	}
 
-	_, processStart := trace.StartSpan(ctx, "ProcessStart")
+	span.End()
+	_, processStart := trace.StartSpan(ctx, "Containerd: launch process")
+	processStart.AddAttributes(trace.StringAttribute("pid", p.ID()))
 
 	if err := p.Start(ctx); err != nil {
 		return nil, errdefs.ToGRPC(err)
