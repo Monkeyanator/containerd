@@ -199,16 +199,13 @@ func (l *local) Create(ctx context.Context, r *api.CreateTaskRequest, _ ...grpc.
 
 func (l *local) Start(ctx context.Context, r *api.StartRequest, _ ...grpc.CallOption) (*api.StartResponse, error) {
 
-	fmt.Println("I think I can I think I can")
-
 	// Create an register a OpenCensus
 	// Stackdriver Trace exporter.
 	exporter, err := stackdriver.NewExporter(stackdriver.Options{
 		ProjectID: "samnaser-gke-dev-217421",
 	})
-	fmt.Println("Creds:", os.Getenv("GOOGLE_APPLICATION_CREDENTIALS"))
 	if err != nil {
-		fmt.Println("Stackdriver exporter could not be initialized: " + err.Error())
+		fmt.Printf("Stackdriver exporter could not be initialized: %v", err)
 	}
 
 	trace.RegisterExporter(exporter)
@@ -217,7 +214,6 @@ func (l *local) Start(ctx context.Context, r *api.StartRequest, _ ...grpc.CallOp
 	ctx, span := trace.StartSpan(ctx, "StartContainerInnerCall")
 	span.AddAttributes(trace.StringAttribute("Container ID", r.ContainerID))
 	defer span.End()
-	ctx, taskListProcessRetrieval := trace.StartSpan(ctx, "TaskListProcessRetrieval")
 
 	t, err := l.getTask(ctx, r.ContainerID)
 	if err != nil {
@@ -230,7 +226,6 @@ func (l *local) Start(ctx context.Context, r *api.StartRequest, _ ...grpc.CallOp
 		}
 	}
 
-	taskListProcessRetrieval.End()
 	_, processStart := trace.StartSpan(ctx, "ProcessStart")
 
 	if err := p.Start(ctx); err != nil {
