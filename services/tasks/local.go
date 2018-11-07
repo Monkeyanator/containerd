@@ -201,9 +201,7 @@ func (l *local) Start(ctx context.Context, r *api.StartRequest, _ ...grpc.CallOp
 
 	// Create an register a OpenCensus
 	// Stackdriver Trace exporter.
-	exporter, err := stackdriver.NewExporter(stackdriver.Options{
-		ProjectID: "samnaser-gke-dev-217421",
-	})
+	exporter, err := stackdriver.NewExporter(stackdriver.Options{})
 	if err != nil {
 		fmt.Printf("Stackdriver exporter could not be initialized: %v", err)
 	}
