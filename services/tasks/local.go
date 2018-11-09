@@ -48,6 +48,7 @@ import (
 	ptypes "github.com/gogo/protobuf/types"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/pkg/errors"
+	"github.com/sirupsen/logrus"
 	bolt "go.etcd.io/bbolt"
 	"go.opencensus.io/trace"
 	"google.golang.org/grpc"
@@ -204,6 +205,7 @@ func (l *local) Start(ctx context.Context, r *api.StartRequest, _ ...grpc.CallOp
 	exporter, err := stackdriver.NewExporter(stackdriver.Options{})
 	if err != nil {
 		fmt.Printf("Stackdriver exporter could not be initialized: %v", err)
+		logrus.Errorf("Stackdriver exporter could not be initialized...")
 	}
 
 	trace.RegisterExporter(exporter)
@@ -211,6 +213,8 @@ func (l *local) Start(ctx context.Context, r *api.StartRequest, _ ...grpc.CallOp
 
 	ctx, span := trace.StartSpan(ctx, "Containerd.RetrieveTaskAndProcess")
 	span.AddAttributes(trace.StringAttribute("Container ID", r.ContainerID))
+
+	logrus.Errorf("OpenCensus trace in progress for container ID %s", r.ContainerID)
 
 	t, err := l.getTask(ctx, r.ContainerID)
 	if err != nil {
@@ -224,8 +228,9 @@ func (l *local) Start(ctx context.Context, r *api.StartRequest, _ ...grpc.CallOp
 	}
 
 	span.End()
-	_, processStart := trace.StartSpan(ctx, "Containerd.LaunchProcess")
+	ctx, processStart := trace.StartSpan(ctx, "Containerd.LaunchProcess")
 	processStart.AddAttributes(trace.StringAttribute("pid", p.ID()))
+	processStart.AddAttributes(trace.StringAttribute("containerId", r.ContainerID))
 
 	if err := p.Start(ctx); err != nil {
 		return nil, errdefs.ToGRPC(err)

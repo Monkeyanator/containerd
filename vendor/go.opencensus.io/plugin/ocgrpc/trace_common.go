@@ -102,6 +102,6 @@ func traceHandleRPC(ctx context.Context, rs stats.RPCStats) {
 				span.SetStatus(trace.Status{Code: int32(codes.Internal), Message: rs.Error.Error()})
 			}
 		}
-		span.End()
+		//span.End()
 	}
 }

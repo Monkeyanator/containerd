@@ -17,15 +17,18 @@ limitations under the License.
 package server
 
 import (
+	"fmt"
 	"io"
 	"os"
 	"time"
 
+	"contrib.go.opencensus.io/exporter/stackdriver"
 	"github.com/containerd/containerd"
 	containerdio "github.com/containerd/containerd/cio"
 	"github.com/containerd/containerd/errdefs"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
+	"go.opencensus.io/trace"
 	"golang.org/x/net/context"
 	runtime "k8s.io/kubernetes/pkg/kubelet/apis/cri/runtime/v1alpha2"
 
@@ -38,10 +41,26 @@ import (
 
 // StartContainer starts the container.
 func (c *criService) StartContainer(ctx context.Context, r *runtime.StartContainerRequest) (retRes *runtime.StartContainerResponse, retErr error) {
+
+	// Create an register a OpenCensus
+	// Stackdriver Trace exporter.
+	exporter, err := stackdriver.NewExporter(stackdriver.Options{})
+	if err != nil {
+		fmt.Printf("Stackdriver exporter could not be initialized: %v", err)
+		logrus.Errorf("Stackdriver exporter could not be initialized...")
+	}
+
+	trace.RegisterExporter(exporter)
+	trace.ApplyConfig(trace.Config{DefaultSampler: trace.AlwaysSample()})
+
+	ctx, startContainerSpan := trace.StartSpan(ctx, "ContainerStart.StartContainer")
+
 	container, err := c.containerStore.Get(r.GetContainerId())
 	if err != nil {
 		return nil, errors.Wrapf(err, "an error occurred when try to find container %q", r.GetContainerId())
 	}
+
+	startContainerSpan.Annotate([]trace.Attribute{trace.StringAttribute("containerIDFromStore", r.GetContainerId())}, "Retrieved container from store")
 
 	var startErr error
 	// update container status in one transaction to avoid race with event monitor.
@@ -55,6 +74,9 @@ func (c *criService) StartContainer(ctx context.Context, r *runtime.StartContain
 	} else if err != nil {
 		return nil, errors.Wrapf(err, "failed to update container %q metadata", container.ID)
 	}
+
+	startContainerSpan.End()
+
 	return &runtime.StartContainerResponse{}, nil
 }
 
@@ -67,6 +89,17 @@ func (c *criService) startContainer(ctx context.Context,
 	meta := cntr.Metadata
 	container := cntr.Container
 	config := meta.Config
+
+	// Create an register a OpenCensus
+	// Stackdriver Trace exporter.
+	exporter, err := stackdriver.NewExporter(stackdriver.Options{})
+	if err != nil {
+		fmt.Printf("Stackdriver exporter could not be initialized: %v", err)
+		logrus.Errorf("Stackdriver exporter could not be initialized...")
+	}
+
+	trace.RegisterExporter(exporter)
+	trace.ApplyConfig(trace.Config{DefaultSampler: trace.AlwaysSample()})
 
 	// Return error if container is not in created state.
 	if status.State() != runtime.ContainerState_CONTAINER_CREATED {
@@ -88,6 +121,8 @@ func (c *criService) startContainer(ctx context.Context,
 		}
 	}()
 
+	ctx, sandboxRetrieveSpan := trace.StartSpan(ctx, "ContainerStart.SandboxStore")
+
 	// Get sandbox config from sandbox store.
 	sandbox, err := c.sandboxStore.Get(meta.SandboxID)
 	if err != nil {
@@ -97,6 +132,10 @@ func (c *criService) startContainer(ctx context.Context,
 	if sandbox.Status.Get().State != sandboxstore.StateReady {
 		return errors.Errorf("sandbox container %q is not running", sandboxID)
 	}
+
+	sandboxRetrieveSpan.AddAttributes(trace.StringAttribute("sandboxID", sandboxID))
+	sandboxRetrieveSpan.End()
+	ctx, ioCreationSpan := trace.StartSpan(ctx, "ContainerStart.IOCreation")
 
 	ioCreation := func(id string) (_ containerdio.IO, err error) {
 		stdoutWC, stderrWC, err := c.createContainerLoggers(meta.LogPath, config.GetTty())
@@ -112,6 +151,9 @@ func (c *criService) startContainer(ctx context.Context,
 	if err != nil {
 		return errors.Wrap(err, "failed to get container info")
 	}
+
+	ioCreationSpan.End()
+	ctx, taskCreationSpan := trace.StartSpan(ctx, "ContainerStart.TaskCreation")
 
 	var taskOpts []containerd.NewTaskOpts
 	// TODO(random-liu): Remove this after shim v1 is deprecated.
@@ -133,10 +175,15 @@ func (c *criService) startContainer(ctx context.Context,
 		}
 	}()
 
+	taskCreationSpan.End()
+	_, containerdTaskStartSpan := trace.StartSpan(ctx, "ContainerStart.StartContainerdTask")
+
 	// Start containerd task.
 	if err := task.Start(ctx); err != nil {
 		return errors.Wrapf(err, "failed to start containerd task %q", id)
 	}
+
+	containerdTaskStartSpan.End()
 
 	// Update container start timestamp.
 	status.Pid = task.Pid()

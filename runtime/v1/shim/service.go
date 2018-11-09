@@ -27,6 +27,7 @@ import (
 	"path/filepath"
 	"sync"
 
+	"contrib.go.opencensus.io/exporter/stackdriver"
 	"github.com/containerd/console"
 	eventstypes "github.com/containerd/containerd/api/events"
 	"github.com/containerd/containerd/api/types/task"
@@ -46,6 +47,7 @@ import (
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
+	"go.opencensus.io/trace"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -188,6 +190,20 @@ func (s *Service) Create(ctx context.Context, r *shimapi.CreateTaskRequest) (_ *
 
 // Start a process
 func (s *Service) Start(ctx context.Context, r *shimapi.StartRequest) (*shimapi.StartResponse, error) {
+
+	// Create an register a OpenCensus
+	// Stackdriver Trace exporter.
+	exporter, err := stackdriver.NewExporter(stackdriver.Options{})
+	if err != nil {
+		fmt.Printf("Stackdriver exporter could not be initialized: %v", err)
+		logrus.Errorf("Stackdriver exporter could not be initialized...")
+	}
+
+	trace.RegisterExporter(exporter)
+	trace.ApplyConfig(trace.Config{DefaultSampler: trace.AlwaysSample()})
+
+	ctx, shimStartTrace := trace.StartSpan(ctx, "Shim.ExecProcess")
+
 	p, err := s.getExecProcess(r.ID)
 	if err != nil {
 		return nil, err
@@ -195,6 +211,8 @@ func (s *Service) Start(ctx context.Context, r *shimapi.StartRequest) (*shimapi.
 	if err := p.Start(ctx); err != nil {
 		return nil, err
 	}
+
+	shimStartTrace.End()
 	return &shimapi.StartResponse{
 		ID:  p.ID(),
 		Pid: uint32(p.Pid()),

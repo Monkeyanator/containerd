@@ -20,8 +20,10 @@ package linux
 
 import (
 	"context"
+	"fmt"
 	"sync"
 
+	"contrib.go.opencensus.io/exporter/stackdriver"
 	"github.com/containerd/cgroups"
 	eventstypes "github.com/containerd/containerd/api/events"
 	"github.com/containerd/containerd/api/types/task"
@@ -36,6 +38,8 @@ import (
 	"github.com/containerd/typeurl"
 	"github.com/gogo/protobuf/types"
 	"github.com/pkg/errors"
+	"github.com/sirupsen/logrus"
+	"go.opencensus.io/trace"
 )
 
 // Task on a linux based system
@@ -112,6 +116,20 @@ func (t *Task) Delete(ctx context.Context) (*runtime.Exit, error) {
 
 // Start the task
 func (t *Task) Start(ctx context.Context) error {
+
+	// Create an register a OpenCensus
+	// Stackdriver Trace exporter.
+	exporter, err := stackdriver.NewExporter(stackdriver.Options{})
+	if err != nil {
+		fmt.Printf("Stackdriver exporter could not be initialized: %v", err)
+		logrus.Errorf("Stackdriver exporter could not be initialized...")
+	}
+
+	trace.RegisterExporter(exporter)
+	trace.ApplyConfig(trace.Config{DefaultSampler: trace.AlwaysSample()})
+
+	ctx, shimStartSpan := trace.StartSpan(ctx, "Task.ShimStart")
+
 	t.mu.Lock()
 	hasCgroup := t.cg != nil
 	t.mu.Unlock()
@@ -121,6 +139,10 @@ func (t *Task) Start(ctx context.Context) error {
 	if err != nil {
 		return errdefs.FromGRPC(err)
 	}
+
+	shimStartSpan.End()
+	_, cgroupLoadSpan := trace.StartSpan(ctx, "Task.LoadCGroupsIfNeeded")
+
 	t.pid = int(r.Pid)
 	if !hasCgroup {
 		cg, err := cgroups.Load(cgroups.V1, cgroups.PidPath(t.pid))
@@ -135,6 +157,9 @@ func (t *Task) Start(ctx context.Context) error {
 		ContainerID: t.id,
 		Pid:         uint32(t.pid),
 	})
+
+	cgroupLoadSpan.End()
+
 	return nil
 }
 
