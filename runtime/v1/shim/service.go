@@ -36,6 +36,7 @@ import (
 	"github.com/containerd/containerd/log"
 	"github.com/containerd/containerd/mount"
 	"github.com/containerd/containerd/namespaces"
+	"github.com/containerd/containerd/pkg/trace"
 	"github.com/containerd/containerd/runtime"
 	"github.com/containerd/containerd/runtime/linux/runctypes"
 	rproc "github.com/containerd/containerd/runtime/proc"
@@ -202,7 +203,9 @@ func (s *Service) Start(ctx context.Context, r *shimapi.StartRequest) (*shimapi.
 	trace.RegisterExporter(exporter)
 	trace.ApplyConfig(trace.Config{DefaultSampler: trace.AlwaysSample()})
 
-	ctx, shimStartTrace := trace.StartSpan(ctx, "Shim.ExecProcess")
+	remoteParentSpanContext, _ := traceutil.SpanContextFromBase64String(r.TraceContext)
+	ctx, shimStartTrace := trace.StartSpanWithRemoteParent(ctx, "Shim.ExecProcess", remoteParentSpanContext)
+	shimStartTrace.AddAttributes(trace.StringAttribute("traceContext", r.TraceContext))
 
 	p, err := s.getExecProcess(r.ID)
 	if err != nil {

@@ -148,11 +148,13 @@ message UpdateTaskRequest {
 
 message StartRequest {
 	string id = 1;
+	string trace_context = 2;
 }
 
 message StartResponse {
 	string id = 1;
 	uint32 pid = 2;
+	string trace_context = 3;
 }
 
 message WaitRequest {

@@ -121,8 +121,6 @@ func (c *criService) startContainer(ctx context.Context,
 		}
 	}()
 
-	ctx, sandboxRetrieveSpan := trace.StartSpan(ctx, "ContainerStart.SandboxStore")
-
 	// Get sandbox config from sandbox store.
 	sandbox, err := c.sandboxStore.Get(meta.SandboxID)
 	if err != nil {
@@ -132,10 +130,6 @@ func (c *criService) startContainer(ctx context.Context,
 	if sandbox.Status.Get().State != sandboxstore.StateReady {
 		return errors.Errorf("sandbox container %q is not running", sandboxID)
 	}
-
-	sandboxRetrieveSpan.AddAttributes(trace.StringAttribute("sandboxID", sandboxID))
-	sandboxRetrieveSpan.End()
-	ctx, ioCreationSpan := trace.StartSpan(ctx, "ContainerStart.IOCreation")
 
 	ioCreation := func(id string) (_ containerdio.IO, err error) {
 		stdoutWC, stderrWC, err := c.createContainerLoggers(meta.LogPath, config.GetTty())
@@ -152,7 +146,6 @@ func (c *criService) startContainer(ctx context.Context,
 		return errors.Wrap(err, "failed to get container info")
 	}
 
-	ioCreationSpan.End()
 	ctx, taskCreationSpan := trace.StartSpan(ctx, "ContainerStart.TaskCreation")
 
 	var taskOpts []containerd.NewTaskOpts
