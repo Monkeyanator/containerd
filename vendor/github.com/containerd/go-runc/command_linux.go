@@ -21,22 +21,9 @@ import (
 	"os"
 	"os/exec"
 	"syscall"
-
-	"contrib.go.opencensus.io/exporter/stackdriver"
-	"go.opencensus.io/trace"
 )
 
 func (r *Runc) command(context context.Context, args ...string) *exec.Cmd {
-
-	// Create an register a OpenCensus
-	// Stackdriver Trace exporter.
-	exporter, _ := stackdriver.NewExporter(stackdriver.Options{})
-
-	trace.RegisterExporter(exporter)
-	trace.ApplyConfig(trace.Config{DefaultSampler: trace.AlwaysSample()})
-
-	_, runcStartSpan := trace.StartSpan(context, "RuncStartSpan.Start")
-	runcStartSpan.AddAttributes(trace.StringAttribute("command", r.Command))
 
 	command := r.Command
 	if command == "" {
@@ -50,8 +37,6 @@ func (r *Runc) command(context context.Context, args ...string) *exec.Cmd {
 	if r.PdeathSignal != 0 {
 		cmd.SysProcAttr.Pdeathsig = r.PdeathSignal
 	}
-
-	runcStartSpan.End()
 
 	return cmd
 }

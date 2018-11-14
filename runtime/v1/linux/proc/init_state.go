@@ -30,9 +30,6 @@ import (
 	runc "github.com/containerd/go-runc"
 	google_protobuf "github.com/gogo/protobuf/types"
 	"github.com/pkg/errors"
-
-	"contrib.go.opencensus.io/exporter/stackdriver"
-	"go.opencensus.io/trace"
 )
 
 type initState interface {
@@ -100,22 +97,12 @@ func (s *createdState) Resize(ws console.WinSize) error {
 
 func (s *createdState) Start(ctx context.Context) error {
 
-	// Create an register a OpenCensus
-	// Stackdriver Trace exporter.
-	exporter, _ := stackdriver.NewExporter(stackdriver.Options{})
-
-	trace.RegisterExporter(exporter)
-	trace.ApplyConfig(trace.Config{DefaultSampler: trace.AlwaysSample()})
-
-	ctx, initStateStartSpan := trace.StartSpan(ctx, "InitState.Start")
-
 	s.p.mu.Lock()
 	defer s.p.mu.Unlock()
 	if err := s.p.start(ctx); err != nil {
 		return err
 	}
 
-	initStateStartSpan.End()
 	return s.transition("running")
 }
 

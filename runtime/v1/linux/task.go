@@ -129,7 +129,7 @@ func (t *Task) Start(ctx context.Context) error {
 	trace.RegisterExporter(exporter)
 	trace.ApplyConfig(trace.Config{DefaultSampler: trace.AlwaysSample()})
 
-	ctx, shimStartSpan := trace.StartSpan(ctx, "Task.ShimStart")
+	ctx, shimStartSpan := trace.StartSpan(ctx, "Containerd.RuncShimStartRequest")
 
 	t.mu.Lock()
 	hasCgroup := t.cg != nil

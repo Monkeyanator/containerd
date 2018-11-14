@@ -53,7 +53,7 @@ func (c *criService) StartContainer(ctx context.Context, r *runtime.StartContain
 	trace.RegisterExporter(exporter)
 	trace.ApplyConfig(trace.Config{DefaultSampler: trace.AlwaysSample()})
 
-	ctx, startContainerSpan := trace.StartSpan(ctx, "ContainerStart.StartContainer")
+	ctx, startContainerSpan := trace.StartSpan(ctx, "CRI.StartContainer")
 
 	container, err := c.containerStore.Get(r.GetContainerId())
 	if err != nil {
@@ -89,17 +89,6 @@ func (c *criService) startContainer(ctx context.Context,
 	meta := cntr.Metadata
 	container := cntr.Container
 	config := meta.Config
-
-	// Create an register a OpenCensus
-	// Stackdriver Trace exporter.
-	exporter, err := stackdriver.NewExporter(stackdriver.Options{})
-	if err != nil {
-		fmt.Printf("Stackdriver exporter could not be initialized: %v", err)
-		logrus.Errorf("Stackdriver exporter could not be initialized...")
-	}
-
-	trace.RegisterExporter(exporter)
-	trace.ApplyConfig(trace.Config{DefaultSampler: trace.AlwaysSample()})
 
 	// Return error if container is not in created state.
 	if status.State() != runtime.ContainerState_CONTAINER_CREATED {
@@ -146,8 +135,6 @@ func (c *criService) startContainer(ctx context.Context,
 		return errors.Wrap(err, "failed to get container info")
 	}
 
-	ctx, taskCreationSpan := trace.StartSpan(ctx, "ContainerStart.TaskCreation")
-
 	var taskOpts []containerd.NewTaskOpts
 	// TODO(random-liu): Remove this after shim v1 is deprecated.
 	if c.config.NoPivot && ctrInfo.Runtime.Name == linuxRuntime {
@@ -168,15 +155,10 @@ func (c *criService) startContainer(ctx context.Context,
 		}
 	}()
 
-	taskCreationSpan.End()
-	_, containerdTaskStartSpan := trace.StartSpan(ctx, "ContainerStart.StartContainerdTask")
-
 	// Start containerd task.
 	if err := task.Start(ctx); err != nil {
 		return errors.Wrapf(err, "failed to start containerd task %q", id)
 	}
-
-	containerdTaskStartSpan.End()
 
 	// Update container start timestamp.
 	status.Pid = task.Pid()

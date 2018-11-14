@@ -210,10 +210,6 @@ func (l *local) Start(ctx context.Context, r *api.StartRequest, _ ...grpc.CallOp
 
 	trace.RegisterExporter(exporter)
 	trace.ApplyConfig(trace.Config{DefaultSampler: trace.AlwaysSample()})
-
-	ctx, span := trace.StartSpan(ctx, "Containerd.RetrieveTaskAndProcess")
-	span.AddAttributes(trace.StringAttribute("Container ID", r.ContainerID))
-
 	logrus.Errorf("OpenCensus trace in progress for container ID %s", r.ContainerID)
 
 	t, err := l.getTask(ctx, r.ContainerID)
@@ -227,20 +223,22 @@ func (l *local) Start(ctx context.Context, r *api.StartRequest, _ ...grpc.CallOp
 		}
 	}
 
-	span.End()
-	ctx, processStart := trace.StartSpan(ctx, "Containerd.LaunchProcess")
+	context, processStart := trace.StartSpan(ctx, "Containerd.LaunchProcess")
 	processStart.AddAttributes(trace.StringAttribute("pid", p.ID()))
 	processStart.AddAttributes(trace.StringAttribute("containerId", r.ContainerID))
 
-	if err := p.Start(ctx); err != nil {
+	if err := p.Start(context); err != nil {
 		return nil, errdefs.ToGRPC(err)
 	}
-	state, err := p.State(ctx)
+	state, err := p.State(context)
 	if err != nil {
 		return nil, errdefs.ToGRPC(err)
 	}
 
-	processStart.End()
+	s := trace.FromContext(ctx)
+	if s != nil {
+		processStart.End()
+	}
 
 	return &api.StartResponse{
 		Pid: state.Pid,
