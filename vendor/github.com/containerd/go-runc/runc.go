@@ -680,8 +680,6 @@ func (r *Runc) runOrError(context context.Context, cmd *exec.Cmd) error {
 	}
 
 	trace.RegisterExporter(exporter)
-	trace.ApplyConfig(trace.Config{DefaultSampler: trace.AlwaysSample()})
-
 	shouldTrace := trace.FromContext(context) != nil
 	context, runOrErrorSpan := trace.StartSpan(context, "Runc.RunOrError")
 
@@ -719,11 +717,7 @@ func cmdOutput(context context.Context, cmd *exec.Cmd, combined bool) ([]byte, e
 	if err != nil {
 		logrus.Errorf("Stackdriver exporter could not be initialized...")
 	}
-
 	trace.RegisterExporter(exporter)
-	trace.ApplyConfig(trace.Config{DefaultSampler: trace.AlwaysSample()})
-
-	shouldTrace := trace.FromContext(context) != nil
 
 	b := getBuf()
 	defer putBuf(b)
@@ -747,18 +741,14 @@ func cmdOutput(context context.Context, cmd *exec.Cmd, combined bool) ([]byte, e
 	if err != nil {
 		return nil, err
 	}
-	if shouldTrace {
-		monitorStartSpan.End()
-	}
+	monitorStartSpan.End()
 
 	_, monitorWaitSpan := trace.StartSpan(ctx, "Runc.MonitorWait")
 	status, err := Monitor.Wait(cmd, ec)
 	if err == nil && status != 0 {
 		err = fmt.Errorf("%s did not terminate sucessfully", cmd.Args[0])
 	}
-	if shouldTrace {
-		monitorWaitSpan.End()
-	}
+	monitorWaitSpan.End()
 
 	return b.Bytes(), err
 }

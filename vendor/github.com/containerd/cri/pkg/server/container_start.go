@@ -51,8 +51,6 @@ func (c *criService) StartContainer(ctx context.Context, r *runtime.StartContain
 	}
 
 	trace.RegisterExporter(exporter)
-	trace.ApplyConfig(trace.Config{DefaultSampler: trace.AlwaysSample()})
-
 	ctx, startContainerSpan := trace.StartSpan(ctx, "CRI.StartContainer")
 
 	container, err := c.containerStore.Get(r.GetContainerId())

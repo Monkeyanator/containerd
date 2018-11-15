@@ -183,6 +183,7 @@ func StartSpanWithRemoteParent(ctx context.Context, name string, parent SpanCont
 	span := startSpanInternal(name, parent != SpanContext{}, parent, true, opts)
 	ctx, end := startExecutionTracerTask(ctx, name)
 	span.executionTracerTaskEnd = end
+	span.spanContext.setIsSampled(parent.IsSampled())
 	return NewContext(ctx, span), span
 }
 

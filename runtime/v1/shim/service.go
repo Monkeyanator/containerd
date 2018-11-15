@@ -27,7 +27,6 @@ import (
 	"path/filepath"
 	"sync"
 
-	"contrib.go.opencensus.io/exporter/stackdriver"
 	"github.com/containerd/console"
 	eventstypes "github.com/containerd/containerd/api/events"
 	"github.com/containerd/containerd/api/types/task"
@@ -194,15 +193,13 @@ func (s *Service) Start(ctx context.Context, r *shimapi.StartRequest) (*shimapi.
 
 	// Create an register a OpenCensus
 	// Stackdriver Trace exporter.
-	exporter, err := stackdriver.NewExporter(stackdriver.Options{})
+	exporter, err := traceutil.DefaultExporter()
 	if err != nil {
 		fmt.Printf("Stackdriver exporter could not be initialized: %v", err)
 		logrus.Errorf("Stackdriver exporter could not be initialized...")
 	}
 
 	trace.RegisterExporter(exporter)
-	trace.ApplyConfig(trace.Config{DefaultSampler: trace.AlwaysSample()})
-
 	remoteParentSpanContext, _ := traceutil.SpanContextFromBase64String(r.TraceContext)
 	ctx, shimStartTrace := trace.StartSpanWithRemoteParent(ctx, "RuncShim.ExecProcess", remoteParentSpanContext)
 	shimStartTrace.AddAttributes(trace.StringAttribute("traceContext", r.TraceContext))

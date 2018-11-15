@@ -23,7 +23,6 @@ import (
 	"fmt"
 	"sync"
 
-	"contrib.go.opencensus.io/exporter/stackdriver"
 	"github.com/containerd/cgroups"
 	eventstypes "github.com/containerd/containerd/api/events"
 	"github.com/containerd/containerd/api/types/task"
@@ -120,15 +119,13 @@ func (t *Task) Start(ctx context.Context) error {
 
 	// Create an register a OpenCensus
 	// Stackdriver Trace exporter.
-	exporter, err := stackdriver.NewExporter(stackdriver.Options{})
+	exporter, err := traceutil.DefaultExporter()
 	if err != nil {
 		fmt.Printf("Stackdriver exporter could not be initialized: %v", err)
 		logrus.Errorf("Stackdriver exporter could not be initialized...")
 	}
 
 	trace.RegisterExporter(exporter)
-	trace.ApplyConfig(trace.Config{DefaultSampler: trace.AlwaysSample()})
-
 	ctx, shimStartSpan := trace.StartSpan(ctx, "Containerd.RuncShimStartRequest")
 
 	t.mu.Lock()
