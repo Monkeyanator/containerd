@@ -96,11 +96,13 @@ func (s *createdState) Resize(ws console.WinSize) error {
 }
 
 func (s *createdState) Start(ctx context.Context) error {
+
 	s.p.mu.Lock()
 	defer s.p.mu.Unlock()
 	if err := s.p.start(ctx); err != nil {
 		return err
 	}
+
 	return s.transition("running")
 }
 

@@ -17,15 +17,18 @@ limitations under the License.
 package server
 
 import (
+	"fmt"
 	"io"
 	"os"
 	"time"
 
+	"contrib.go.opencensus.io/exporter/stackdriver"
 	"github.com/containerd/containerd"
 	containerdio "github.com/containerd/containerd/cio"
 	"github.com/containerd/containerd/errdefs"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
+	"go.opencensus.io/trace"
 	"golang.org/x/net/context"
 	runtime "k8s.io/kubernetes/pkg/kubelet/apis/cri/runtime/v1alpha2"
 
@@ -38,10 +41,24 @@ import (
 
 // StartContainer starts the container.
 func (c *criService) StartContainer(ctx context.Context, r *runtime.StartContainerRequest) (retRes *runtime.StartContainerResponse, retErr error) {
+
+	// Create an register a OpenCensus
+	// Stackdriver Trace exporter.
+	exporter, err := stackdriver.NewExporter(stackdriver.Options{})
+	if err != nil {
+		fmt.Printf("Stackdriver exporter could not be initialized: %v", err)
+		logrus.Errorf("Stackdriver exporter could not be initialized...")
+	}
+
+	trace.RegisterExporter(exporter)
+	ctx, startContainerSpan := trace.StartSpan(ctx, "CRI.StartContainer")
+
 	container, err := c.containerStore.Get(r.GetContainerId())
 	if err != nil {
 		return nil, errors.Wrapf(err, "an error occurred when try to find container %q", r.GetContainerId())
 	}
+
+	startContainerSpan.Annotate([]trace.Attribute{trace.StringAttribute("containerIDFromStore", r.GetContainerId())}, "Retrieved container from store")
 
 	var startErr error
 	// update container status in one transaction to avoid race with event monitor.
@@ -55,6 +72,9 @@ func (c *criService) StartContainer(ctx context.Context, r *runtime.StartContain
 	} else if err != nil {
 		return nil, errors.Wrapf(err, "failed to update container %q metadata", container.ID)
 	}
+
+	startContainerSpan.End()
+
 	return &runtime.StartContainerResponse{}, nil
 }
 

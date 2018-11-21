@@ -35,6 +35,7 @@ import (
 	"github.com/containerd/containerd/log"
 	"github.com/containerd/containerd/mount"
 	"github.com/containerd/containerd/namespaces"
+	"github.com/containerd/containerd/pkg/trace"
 	"github.com/containerd/containerd/runtime"
 	"github.com/containerd/containerd/runtime/linux/runctypes"
 	rproc "github.com/containerd/containerd/runtime/proc"
@@ -46,6 +47,7 @@ import (
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
+	"go.opencensus.io/trace"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -188,6 +190,20 @@ func (s *Service) Create(ctx context.Context, r *shimapi.CreateTaskRequest) (_ *
 
 // Start a process
 func (s *Service) Start(ctx context.Context, r *shimapi.StartRequest) (*shimapi.StartResponse, error) {
+
+	// Create an register a OpenCensus
+	// Stackdriver Trace exporter.
+	exporter, err := traceutil.DefaultExporter()
+	if err != nil {
+		fmt.Printf("Stackdriver exporter could not be initialized: %v", err)
+		logrus.Errorf("Stackdriver exporter could not be initialized...")
+	}
+
+	trace.RegisterExporter(exporter)
+	remoteParentSpanContext, _ := traceutil.SpanContextFromBase64String(r.TraceContext)
+	ctx, shimStartTrace := trace.StartSpanWithRemoteParent(ctx, "RuncShim.ExecProcess", remoteParentSpanContext)
+	shimStartTrace.AddAttributes(trace.StringAttribute("traceContext", r.TraceContext))
+
 	p, err := s.getExecProcess(r.ID)
 	if err != nil {
 		return nil, err
@@ -195,6 +211,8 @@ func (s *Service) Start(ctx context.Context, r *shimapi.StartRequest) (*shimapi.
 	if err := p.Start(ctx); err != nil {
 		return nil, err
 	}
+
+	shimStartTrace.End()
 	return &shimapi.StartResponse{
 		ID:  p.ID(),
 		Pid: uint32(p.Pid()),

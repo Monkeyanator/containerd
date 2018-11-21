@@ -31,7 +31,11 @@ import (
 	"syscall"
 	"time"
 
+	"contrib.go.opencensus.io/exporter/stackdriver"
+	"go.opencensus.io/trace"
+
 	specs "github.com/opencontainers/runtime-spec/specs-go"
+	"github.com/sirupsen/logrus"
 )
 
 // Format is the type of log formatting options avaliable
@@ -71,7 +75,7 @@ type Runc struct {
 
 // List returns all containers created inside the provided runc root directory
 func (r *Runc) List(context context.Context) ([]*Container, error) {
-	data, err := cmdOutput(r.command(context, "list", "--format=json"), false)
+	data, err := cmdOutput(context, r.command(context, "list", "--format=json"), false)
 	if err != nil {
 		return nil, err
 	}
@@ -84,7 +88,7 @@ func (r *Runc) List(context context.Context) ([]*Container, error) {
 
 // State returns the state for the container provided by id
 func (r *Runc) State(context context.Context, id string) (*Container, error) {
-	data, err := cmdOutput(r.command(context, "state", id), true)
+	data, err := cmdOutput(context, r.command(context, "state", id), true)
 	if err != nil {
 		return nil, fmt.Errorf("%s: %s", err, data)
 	}
@@ -153,7 +157,7 @@ func (r *Runc) Create(context context.Context, id, bundle string, opts *CreateOp
 	cmd.ExtraFiles = opts.ExtraFiles
 
 	if cmd.Stdout == nil && cmd.Stderr == nil {
-		data, err := cmdOutput(cmd, true)
+		data, err := cmdOutput(context, cmd, true)
 		if err != nil {
 			return fmt.Errorf("%s: %s", err, data)
 		}
@@ -179,7 +183,7 @@ func (r *Runc) Create(context context.Context, id, bundle string, opts *CreateOp
 
 // Start will start an already created container
 func (r *Runc) Start(context context.Context, id string) error {
-	return r.runOrError(r.command(context, "start", id))
+	return r.runOrError(context, r.command(context, "start", id))
 }
 
 type ExecOpts struct {
@@ -232,7 +236,7 @@ func (r *Runc) Exec(context context.Context, id string, spec specs.Process, opts
 		opts.Set(cmd)
 	}
 	if cmd.Stdout == nil && cmd.Stderr == nil {
-		data, err := cmdOutput(cmd, true)
+		data, err := cmdOutput(context, cmd, true)
 		if err != nil {
 			return fmt.Errorf("%s: %s", err, data)
 		}
@@ -295,7 +299,7 @@ func (r *Runc) Delete(context context.Context, id string, opts *DeleteOpts) erro
 	if opts != nil {
 		args = append(args, opts.args()...)
 	}
-	return r.runOrError(r.command(context, append(args, id)...))
+	return r.runOrError(context, r.command(context, append(args, id)...))
 }
 
 // KillOpts specifies options for killing a container and its processes
@@ -318,7 +322,7 @@ func (r *Runc) Kill(context context.Context, id string, sig int, opts *KillOpts)
 	if opts != nil {
 		args = append(args, opts.args()...)
 	}
-	return r.runOrError(r.command(context, append(args, id, strconv.Itoa(sig))...))
+	return r.runOrError(context, r.command(context, append(args, id, strconv.Itoa(sig))...))
 }
 
 // Stats return the stats for a container like cpu, memory, and io
@@ -384,17 +388,17 @@ func (r *Runc) Events(context context.Context, id string, interval time.Duration
 
 // Pause the container with the provided id
 func (r *Runc) Pause(context context.Context, id string) error {
-	return r.runOrError(r.command(context, "pause", id))
+	return r.runOrError(context, r.command(context, "pause", id))
 }
 
 // Resume the container with the provided id
 func (r *Runc) Resume(context context.Context, id string) error {
-	return r.runOrError(r.command(context, "resume", id))
+	return r.runOrError(context, r.command(context, "resume", id))
 }
 
 // Ps lists all the processes inside the container returning their pids
 func (r *Runc) Ps(context context.Context, id string) ([]int, error) {
-	data, err := cmdOutput(r.command(context, "ps", "--format", "json", id), true)
+	data, err := cmdOutput(context, r.command(context, "ps", "--format", "json", id), true)
 	if err != nil {
 		return nil, fmt.Errorf("%s: %s", err, data)
 	}
@@ -407,7 +411,7 @@ func (r *Runc) Ps(context context.Context, id string) ([]int, error) {
 
 // Top lists all the processes inside the container returning the full ps data
 func (r *Runc) Top(context context.Context, id string, psOptions string) (*TopResults, error) {
-	data, err := cmdOutput(r.command(context, "ps", "--format", "table", id, psOptions), true)
+	data, err := cmdOutput(context, r.command(context, "ps", "--format", "table", id, psOptions), true)
 	if err != nil {
 		return nil, fmt.Errorf("%s: %s", err, data)
 	}
@@ -506,7 +510,7 @@ func (r *Runc) Checkpoint(context context.Context, id string, opts *CheckpointOp
 	for _, a := range actions {
 		args = a(args)
 	}
-	return r.runOrError(r.command(context, append(args, id)...))
+	return r.runOrError(context, r.command(context, append(args, id)...))
 }
 
 type RestoreOpts struct {
@@ -584,7 +588,7 @@ func (r *Runc) Update(context context.Context, id string, resources *specs.Linux
 	args := []string{"update", "--resources", "-", id}
 	cmd := r.command(context, args...)
 	cmd.Stdin = buf
-	return r.runOrError(cmd)
+	return r.runOrError(context, cmd)
 }
 
 var ErrParseRuncVersion = errors.New("unable to parse runc version")
@@ -597,7 +601,7 @@ type Version struct {
 
 // Version returns the runc and runtime-spec versions
 func (r *Runc) Version(context context.Context) (Version, error) {
-	data, err := cmdOutput(r.command(context, "--version"), false)
+	data, err := cmdOutput(context, r.command(context, "--version"), false)
 	if err != nil {
 		return Version{}, err
 	}
@@ -666,26 +670,55 @@ func (r *Runc) args() (out []string) {
 // encountered and neither Stdout or Stderr was set the error and the
 // stderr of the command will be returned in the format of <error>:
 // <stderr>
-func (r *Runc) runOrError(cmd *exec.Cmd) error {
+func (r *Runc) runOrError(context context.Context, cmd *exec.Cmd) error {
+
+	// Create an register a OpenCensus
+	// Stackdriver Trace exporter.
+	exporter, err := stackdriver.NewExporter(stackdriver.Options{})
+	if err != nil {
+		logrus.Errorf("Stackdriver exporter could not be initialized...")
+	}
+
+	trace.RegisterExporter(exporter)
+	shouldTrace := trace.FromContext(context) != nil
+	context, runOrErrorSpan := trace.StartSpan(context, "Runc.RunOrError")
+
 	if cmd.Stdout != nil || cmd.Stderr != nil {
+
 		ec, err := Monitor.Start(cmd)
 		if err != nil {
 			return err
 		}
+
 		status, err := Monitor.Wait(cmd, ec)
 		if err == nil && status != 0 {
 			err = fmt.Errorf("%s did not terminate sucessfully", cmd.Args[0])
 		}
+
 		return err
 	}
-	data, err := cmdOutput(cmd, true)
+	data, err := cmdOutput(context, cmd, true)
 	if err != nil {
 		return fmt.Errorf("%s: %s", err, data)
 	}
+
+	if shouldTrace {
+		runOrErrorSpan.End()
+	}
+
 	return nil
 }
 
-func cmdOutput(cmd *exec.Cmd, combined bool) ([]byte, error) {
+func cmdOutput(context context.Context, cmd *exec.Cmd, combined bool) ([]byte, error) {
+
+	// Create an register a OpenCensus
+	// Stackdriver Trace exporter.
+	exporter, err := stackdriver.NewExporter(stackdriver.Options{})
+	if err != nil {
+		logrus.Errorf("Stackdriver exporter could not be initialized...")
+	}
+	trace.RegisterExporter(exporter)
+
 	b := getBuf()
 	defer putBuf(b)
 
@@ -693,15 +726,29 @@ func cmdOutput(cmd *exec.Cmd, combined bool) ([]byte, error) {
 	if combined {
 		cmd.Stderr = b
 	}
+
+	ctx, monitorStartSpan := trace.StartSpan(context, "Runc.MonitorStart")
+	monitorStartSpan.AddAttributes(trace.StringAttribute("commandPath", cmd.Path))
+
+	fullCommand := fmt.Sprintf("%s %s", cmd.Path, strings.Join(cmd.Args, " "))
+	monitorStartSpan.AddAttributes(trace.StringAttribute("fullCommand", fullCommand))
+
+	for i, argName := range cmd.Args {
+		monitorStartSpan.AddAttributes(trace.StringAttribute(fmt.Sprintf("arg%d", i), argName))
+	}
+
 	ec, err := Monitor.Start(cmd)
 	if err != nil {
 		return nil, err
 	}
+	monitorStartSpan.End()
 
+	_, monitorWaitSpan := trace.StartSpan(ctx, "Runc.MonitorWait")
 	status, err := Monitor.Wait(cmd, ec)
 	if err == nil && status != 0 {
 		err = fmt.Errorf("%s did not terminate sucessfully", cmd.Args[0])
 	}
+	monitorWaitSpan.End()
 
 	return b.Bytes(), err
 }

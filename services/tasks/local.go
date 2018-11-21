@@ -26,6 +26,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"contrib.go.opencensus.io/exporter/stackdriver"
 	api "github.com/containerd/containerd/api/services/tasks/v1"
 	"github.com/containerd/containerd/api/types"
 	"github.com/containerd/containerd/api/types/task"
@@ -47,7 +48,9 @@ import (
 	ptypes "github.com/gogo/protobuf/types"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/pkg/errors"
+	"github.com/sirupsen/logrus"
 	bolt "go.etcd.io/bbolt"
+	"go.opencensus.io/trace"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -196,6 +199,19 @@ func (l *local) Create(ctx context.Context, r *api.CreateTaskRequest, _ ...grpc.
 }
 
 func (l *local) Start(ctx context.Context, r *api.StartRequest, _ ...grpc.CallOption) (*api.StartResponse, error) {
+
+	// Create an register a OpenCensus
+	// Stackdriver Trace exporter.
+	exporter, err := stackdriver.NewExporter(stackdriver.Options{})
+	if err != nil {
+		fmt.Printf("Stackdriver exporter could not be initialized: %v", err)
+		logrus.Errorf("Stackdriver exporter could not be initialized...")
+	}
+
+	trace.RegisterExporter(exporter)
+	trace.ApplyConfig(trace.Config{DefaultSampler: trace.AlwaysSample()})
+	logrus.Errorf("OpenCensus trace in progress for container ID %s", r.ContainerID)
+
 	t, err := l.getTask(ctx, r.ContainerID)
 	if err != nil {
 		return nil, err
@@ -206,13 +222,24 @@ func (l *local) Start(ctx context.Context, r *api.StartRequest, _ ...grpc.CallOp
 			return nil, errdefs.ToGRPC(err)
 		}
 	}
-	if err := p.Start(ctx); err != nil {
+
+	context, processStart := trace.StartSpan(ctx, "Containerd.LaunchProcess")
+	processStart.AddAttributes(trace.StringAttribute("pid", p.ID()))
+	processStart.AddAttributes(trace.StringAttribute("containerId", r.ContainerID))
+
+	if err := p.Start(context); err != nil {
 		return nil, errdefs.ToGRPC(err)
 	}
-	state, err := p.State(ctx)
+	state, err := p.State(context)
 	if err != nil {
 		return nil, errdefs.ToGRPC(err)
 	}
+
+	s := trace.FromContext(ctx)
+	if s != nil {
+		processStart.End()
+	}
+
 	return &api.StartResponse{
 		Pid: state.Pid,
 	}, nil
