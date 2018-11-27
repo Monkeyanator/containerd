@@ -22,10 +22,10 @@ import (
 	"os"
 	"time"
 
-	"contrib.go.opencensus.io/exporter/stackdriver"
 	"github.com/containerd/containerd"
 	containerdio "github.com/containerd/containerd/cio"
 	"github.com/containerd/containerd/errdefs"
+	"github.com/containerd/containerd/pkg/trace"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 	"go.opencensus.io/trace"
@@ -44,7 +44,7 @@ func (c *criService) StartContainer(ctx context.Context, r *runtime.StartContain
 
 	// Create an register a OpenCensus
 	// Stackdriver Trace exporter.
-	exporter, err := stackdriver.NewExporter(stackdriver.Options{})
+	exporter, err := traceutil.DefaultExporter()
 	if err != nil {
 		fmt.Printf("Stackdriver exporter could not be initialized: %v", err)
 		logrus.Errorf("Stackdriver exporter could not be initialized...")
@@ -68,8 +68,10 @@ func (c *criService) StartContainer(ctx context.Context, r *runtime.StartContain
 		startErr = c.startContainer(ctx, container, &status)
 		return status, nil
 	}); startErr != nil {
+		startContainerSpan.End()
 		return nil, startErr
 	} else if err != nil {
+		startContainerSpan.End()
 		return nil, errors.Wrapf(err, "failed to update container %q metadata", container.ID)
 	}
 

@@ -201,7 +201,7 @@ func (s *Service) Start(ctx context.Context, r *shimapi.StartRequest) (*shimapi.
 
 	trace.RegisterExporter(exporter)
 	remoteParentSpanContext, _ := traceutil.SpanContextFromBase64String(r.TraceContext)
-	ctx, shimStartTrace := trace.StartSpanWithRemoteParent(ctx, "RuncShim.ExecProcess", remoteParentSpanContext)
+	ctx, shimStartTrace := trace.StartSpanWithRemoteParent(ctx, "Containerd.RuncShim.ExecProcess", remoteParentSpanContext)
 	shimStartTrace.AddAttributes(trace.StringAttribute("traceContext", r.TraceContext))
 
 	p, err := s.getExecProcess(r.ID)

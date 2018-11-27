@@ -680,8 +680,7 @@ func (r *Runc) runOrError(context context.Context, cmd *exec.Cmd) error {
 	}
 
 	trace.RegisterExporter(exporter)
-	shouldTrace := trace.FromContext(context) != nil
-	context, runOrErrorSpan := trace.StartSpan(context, "Runc.RunOrError")
+	context, runOrErrorSpan := trace.StartSpan(context, "Runc.RunCommand")
 
 	if cmd.Stdout != nil || cmd.Stderr != nil {
 
@@ -702,9 +701,7 @@ func (r *Runc) runOrError(context context.Context, cmd *exec.Cmd) error {
 		return fmt.Errorf("%s: %s", err, data)
 	}
 
-	if shouldTrace {
-		runOrErrorSpan.End()
-	}
+	runOrErrorSpan.End()
 
 	return nil
 }
@@ -727,28 +724,28 @@ func cmdOutput(context context.Context, cmd *exec.Cmd, combined bool) ([]byte, e
 		cmd.Stderr = b
 	}
 
-	ctx, monitorStartSpan := trace.StartSpan(context, "Runc.MonitorStart")
-	monitorStartSpan.AddAttributes(trace.StringAttribute("commandPath", cmd.Path))
+	// ctx, monitorStartSpan := trace.StartSpan(context, "Runc.MonitorStart")
+	// monitorStartSpan.AddAttributes(trace.StringAttribute("commandPath", cmd.Path))
 
-	fullCommand := fmt.Sprintf("%s %s", cmd.Path, strings.Join(cmd.Args, " "))
-	monitorStartSpan.AddAttributes(trace.StringAttribute("fullCommand", fullCommand))
+	// fullCommand := fmt.Sprintf("%s %s", cmd.Path, strings.Join(cmd.Args, " "))
+	// monitorStartSpan.AddAttributes(trace.StringAttribute("fullCommand", fullCommand))
 
-	for i, argName := range cmd.Args {
-		monitorStartSpan.AddAttributes(trace.StringAttribute(fmt.Sprintf("arg%d", i), argName))
-	}
+	// for i, argName := range cmd.Args {
+	// 	monitorStartSpan.AddAttributes(trace.StringAttribute(fmt.Sprintf("arg%d", i), argName))
+	// }
 
 	ec, err := Monitor.Start(cmd)
 	if err != nil {
 		return nil, err
 	}
-	monitorStartSpan.End()
+	// monitorStartSpan.End()
 
-	_, monitorWaitSpan := trace.StartSpan(ctx, "Runc.MonitorWait")
+	// _, monitorWaitSpan := trace.StartSpan(ctx, "Runc.MonitorWait")
 	status, err := Monitor.Wait(cmd, ec)
 	if err == nil && status != 0 {
 		err = fmt.Errorf("%s did not terminate sucessfully", cmd.Args[0])
 	}
-	monitorWaitSpan.End()
+	// monitorWaitSpan.End()
 
 	return b.Bytes(), err
 }

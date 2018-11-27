@@ -126,7 +126,7 @@ func (t *Task) Start(ctx context.Context) error {
 	}
 
 	trace.RegisterExporter(exporter)
-	ctx, shimStartSpan := trace.StartSpan(ctx, "Containerd.RuncShimStartRequest")
+	ctx, shimStartSpan := trace.StartSpan(ctx, "Containerd.RuncShim.StartTask")
 
 	t.mu.Lock()
 	hasCgroup := t.cg != nil

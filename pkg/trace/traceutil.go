@@ -3,11 +3,15 @@ package traceutil
 import (
 	"encoding/base64"
 	"errors"
+	"log"
 
-	"contrib.go.opencensus.io/exporter/stackdriver"
 	"github.com/golang/glog"
+	"go.opencensus.io/exporter/zipkin"
 	"go.opencensus.io/trace"
 	"go.opencensus.io/trace/propagation"
+
+	openzipkin "github.com/openzipkin/zipkin-go"
+	zipkinHTTP "github.com/openzipkin/zipkin-go/reporter/http"
 )
 
 // SpanContextFromBase64String takes string and returns decoded context from it
@@ -44,7 +48,15 @@ func DefaultExporter() (exporter trace.Exporter, err error) {
 
 	// Create an register a OpenCensus
 	// Stackdriver Trace exporter.
-	exporter, err = stackdriver.NewExporter(stackdriver.Options{})
+	// exporter, err = stackdriver.NewExporter(stackdriver.Options{})
 
-	return exporter, err
+	// Create the Zipkin exporter.
+	localEndpoint, err := openzipkin.NewEndpoint("container-runtime", "192.168.1.5:5454")
+	if err != nil {
+		log.Fatalf("Failed to create the local zipkinEndpoint: %v", err)
+	}
+	reporter := zipkinHTTP.NewReporter("http://35.193.38.26:9411/api/v2/spans")
+	ze := zipkin.NewExporter(reporter, localEndpoint)
+
+	return ze, err
 }

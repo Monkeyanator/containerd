@@ -51,6 +51,8 @@ func ProbabilitySampler(fraction float64) Sampler {
 	return Sampler(func(p SamplingParameters) SamplingDecision {
 		if p.ParentContext.IsSampled() {
 			return SamplingDecision{Sample: true}
+		} else if !p.ParentContext.IsSampled() {
+			return SamplingDecision{Sample: false}
 		}
 		x := binary.BigEndian.Uint64(p.TraceID[0:8]) >> 1
 		return SamplingDecision{Sample: x < traceIDUpperBound}

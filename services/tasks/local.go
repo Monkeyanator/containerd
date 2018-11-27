@@ -26,7 +26,6 @@ import (
 	"path/filepath"
 	"time"
 
-	"contrib.go.opencensus.io/exporter/stackdriver"
 	api "github.com/containerd/containerd/api/services/tasks/v1"
 	"github.com/containerd/containerd/api/types"
 	"github.com/containerd/containerd/api/types/task"
@@ -40,6 +39,7 @@ import (
 	"github.com/containerd/containerd/log"
 	"github.com/containerd/containerd/metadata"
 	"github.com/containerd/containerd/mount"
+	"github.com/containerd/containerd/pkg/trace"
 	"github.com/containerd/containerd/plugin"
 	"github.com/containerd/containerd/runtime"
 	"github.com/containerd/containerd/runtime/v2"
@@ -200,18 +200,6 @@ func (l *local) Create(ctx context.Context, r *api.CreateTaskRequest, _ ...grpc.
 
 func (l *local) Start(ctx context.Context, r *api.StartRequest, _ ...grpc.CallOption) (*api.StartResponse, error) {
 
-	// Create an register a OpenCensus
-	// Stackdriver Trace exporter.
-	exporter, err := stackdriver.NewExporter(stackdriver.Options{})
-	if err != nil {
-		fmt.Printf("Stackdriver exporter could not be initialized: %v", err)
-		logrus.Errorf("Stackdriver exporter could not be initialized...")
-	}
-
-	trace.RegisterExporter(exporter)
-	trace.ApplyConfig(trace.Config{DefaultSampler: trace.AlwaysSample()})
-	logrus.Errorf("OpenCensus trace in progress for container ID %s", r.ContainerID)
-
 	t, err := l.getTask(ctx, r.ContainerID)
 	if err != nil {
 		return nil, err
@@ -223,6 +211,15 @@ func (l *local) Start(ctx context.Context, r *api.StartRequest, _ ...grpc.CallOp
 		}
 	}
 
+	// Create an register a OpenCensus
+	// Stackdriver Trace exporter.
+	exporter, err := traceutil.DefaultExporter()
+	if err != nil {
+		fmt.Printf("Stackdriver exporter could not be initialized: %v", err)
+		logrus.Errorf("Stackdriver exporter could not be initialized...")
+	}
+
+	trace.RegisterExporter(exporter)
 	context, processStart := trace.StartSpan(ctx, "Containerd.LaunchProcess")
 	processStart.AddAttributes(trace.StringAttribute("pid", p.ID()))
 	processStart.AddAttributes(trace.StringAttribute("containerId", r.ContainerID))
@@ -237,6 +234,9 @@ func (l *local) Start(ctx context.Context, r *api.StartRequest, _ ...grpc.CallOp
 
 	s := trace.FromContext(ctx)
 	if s != nil {
+		processStart.AddAttributes(trace.StringAttribute("traceParent", fmt.Sprintf("%s", s.SpanContext().TraceID)))
+		processStart.AddAttributes(trace.StringAttribute("spanParent", fmt.Sprintf("%s", s.SpanContext().SpanID)))
+		processStart.AddAttributes(trace.BoolAttribute("isSampled", s.SpanContext().IsSampled()))
 		processStart.End()
 	}
 
